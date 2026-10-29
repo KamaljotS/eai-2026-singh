@@ -1,0 +1,323 @@
+openapi: 3.0.3
+
+info:
+  title: Canonical Order Checkout Saga API
+  version: 1.0.0
+  description: >
+    Checkout orchestration API for canonical orders, with sequential
+    payment, inventory, shipping and notification operations,
+    compensation, idempotency and execution tracing.
+  contact:
+    name: API Support
+
+servers:
+  - url: http://localhost:3000
+    description: Local orchestrator
+
+tags:
+  - name: Health
+    description: Service health monitoring
+  - name: Checkout
+    description: Canonical order checkout operations
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      operationId: getHealth
+      summary: Check service health
+      description: Returns the current health status of the orchestrator.
+      responses:
+        '200':
+          description: The orchestrator is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /checkout:
+    post:
+      tags:
+        - Checkout
+      operationId: createCheckout
+      summary: Process a canonical order
+      description: >
+        Processes an order using a sequential checkout saga.
+        Repeated requests with the same idempotency key and payload
+        return the stored response without repeating downstream calls.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: >
+            Unique key identifying a checkout attempt. Reusing the key
+            with a different request payload is not allowed.
+          schema:
+            type: string
+            minLength: 1
+      requestBody:
+        required: true
+        description: Canonical order submitted for checkout.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CanonicalOrder'
+      responses:
+        '200':
+          description: Checkout saga completed successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutResponse'
+        '400':
+          description: Missing idempotency key or invalid order data.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: >
+            The idempotency key is already in progress or has been
+            used with a different request payload.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: >
+            A downstream operation failed or a compensation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutResponse'
+        '504':
+          description: A downstream operation timed out.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckoutResponse'
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      description: Health check response.
+      additionalProperties: false
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+
+    Address:
+      type: object
+      description: Customer delivery address.
+      additionalProperties: false
+      required:
+        - street
+        - city
+        - postalCode
+        - country
+      properties:
+        street:
+          type: string
+          minLength: 1
+        city:
+          type: string
+          minLength: 1
+        postalCode:
+          type: string
+          minLength: 1
+        country:
+          type: string
+
+    Customer:
+      type: object
+      description: Customer contact and delivery information.
+      additionalProperties: false
+      required:
+        - name
+        - email
+        - address
+      properties:
+        name:
+          type: string
+          minLength: 1
+        email:
+          type: string
+          format: email
+        address:
+          $ref: '#/components/schemas/Address'
+
+    OrderItem:
+      type: object
+      description: An individual product in the order.
+      additionalProperties: false
+      required:
+        - productId
+        - productName
+        - quantity
+        - unitPrice
+        - currency
+        - taxRate
+      properties:
+        productId:
+          type: string
+          pattern: '^PROD-[0-9]+$'
+        productName:
+          type: string
+          minLength: 1
+        quantity:
+          type: integer
+          minimum: 1
+        unitPrice:
+          type: string
+          pattern: '^-?[0-9]+\.[0-9]{2}$'
+          description: Decimal monetary amount with two fractional digits.
+        currency:
+          type: string
+        taxRate:
+          type: number
+          minimum: 0
+          maximum: 1
+
+    CanonicalOrder:
+      type: object
+      description: >
+        Canonical order format used by the enterprise integration
+        assignments.
+      additionalProperties: false
+      required:
+        - orderId
+        - orderType
+        - source
+        - receivedAt
+        - orderDate
+        - customer
+        - items
+        - currency
+        - status
+      properties:
+        orderId:
+          type: string
+          minLength: 1
+        orderType:
+          type: string
+          enum:
+            - standard
+            - express
+            - b2b
+        source:
+          type: string
+          enum:
+            - web
+            - mobile
+            - b2b
+        receivedAt:
+          type: string
+          format: date-time
+        orderDate:
+          type: string
+          format: date-time
+        customer:
+          $ref: '#/components/schemas/Customer'
+        items:
+          type: array
+          description: Products included in the order.
+          minItems: 1
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/OrderItem'
+        currency:
+          type: string
+        status:
+          type: string
+          enum:
+            - new
+            - processing
+            - shipped
+            - delivered
+
+    TraceItem:
+      type: object
+      description: >
+        Execution record for a downstream saga step or compensation.
+      additionalProperties: false
+      required:
+        - step
+        - status
+        - startedAt
+        - finishedAt
+        - durationMs
+      properties:
+        step:
+          type: string
+          enum:
+            - payment
+            - inventory
+            - shipping
+            - notification
+            - inventory_release
+            - payment_refund
+        status:
+          type: string
+          enum:
+            - success
+            - failed
+            - timeout
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        durationMs:
+          type: integer
+          minimum: 0
+
+    CheckoutResponse:
+      type: object
+      description: >
+        Final checkout result including the saga status and step trace.
+      additionalProperties: false
+      required:
+        - orderId
+        - status
+        - trace
+      properties:
+        orderId:
+          type: string
+          minLength: 1
+        status:
+          type: string
+          enum:
+            - completed
+            - failed
+            - compensated
+            - in_progress
+        code:
+          type: string
+          description: Machine-readable outcome or failure code.
+        trace:
+          type: array
+          description: Ordered records of saga execution.
+          maxItems: 6
+          items:
+            $ref: '#/components/schemas/TraceItem'
+
+    ErrorResponse:
+      type: object
+      description: Request validation or idempotency error.
+      additionalProperties: true
+      required:
+        - code
+      properties:
+        code:
+          type: string
+          description: Machine-readable error identifier.
+        message:
+          type: string
+          description: Human-readable explanation of the error.
