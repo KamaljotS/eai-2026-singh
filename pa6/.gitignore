@@ -1,0 +1,20 @@
+# Installed dependencies
+node_modules/
+**/node_modules/
+
+# Generated build files
+dist/
+coverage/
+
+# Runtime persistence data
+orchestrator/data/*.json
+orchestrator/data/*.tmp
+
+# Local backup files
+*.backup.yaml
+*.backup.txt
+
+# Environment and temporary files
+.env
+.env.local
+*.log
