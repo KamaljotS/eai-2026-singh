@@ -18,6 +18,7 @@ interface LogEntry {
   orderId: string | null;
   correlationId: string | null;
   outcome: string;
+  recipient?: string;
 }
 
 interface Config {
@@ -42,6 +43,7 @@ function record(action: string, req: Request, body: any, outcome: string): void 
     seq: sequence,
     at: new Date().toISOString(),
     action,
+    ...(action === "send" ? { recipient: body?.recipient } : {}),
     orderId: body?.orderId || req.header("x-order-id") || null,
     correlationId: req.header("x-correlation-id") || null,
     outcome,

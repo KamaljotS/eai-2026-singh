@@ -18,6 +18,7 @@ interface LogEntry {
   orderId: string | null;
   correlationId: string | null;
   outcome: string;
+  amount?: string;
 }
 
 interface Config {
@@ -44,6 +45,7 @@ function record(action: string, req: Request, body: any, outcome: string): void 
     seq: sequence,
     at: new Date().toISOString(),
     action,
+    ...(action === "authorize" ? { amount: body?.amount } : {}),
     orderId: body?.orderId || req.header("x-order-id") || null,
     correlationId: req.header("x-correlation-id") || null,
     outcome,
@@ -56,7 +58,13 @@ app.get("/health", (_req: Request, res: Response) => {
 
 app.post("/payment/authorize", (req: Request, res: Response) => {
   const { orderId, amount } = req.body || {};
-  if (!orderId || typeof amount !== "number") {
+  if (
+  !orderId ||
+  !(
+    (typeof amount === "number" && Number.isFinite(amount)) ||
+    (typeof amount === "string" && /^\d+\.\d{2}$/.test(amount))
+  )
+) {
     record("authorize", req, req.body, "validation_error");
     res.status(400).json({ code: "validation_error", message: "orderId and numeric amount are required" });
     return;

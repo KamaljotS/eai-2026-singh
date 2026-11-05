@@ -223,7 +223,7 @@ function normalizeCheckoutOrder(value: unknown): unknown {
   return normalized;
 }
 
-function calculateAmount(order: CanonicalOrder): number {
+function calculateAmount(order: CanonicalOrder): string {
   let cents = 0;
   for (const item of order.items) {
     const negative = item.unitPrice.startsWith("-");
@@ -232,7 +232,7 @@ function calculateAmount(order: CanonicalOrder): number {
     cents += (negative ? -unitCents : unitCents) * item.quantity;
   }
   if (!Number.isSafeInteger(cents)) throw new Error("Order amount exceeds supported range");
-  return cents / 100;
+  return (cents / 100).toFixed(2);
 }
 
 interface StepResult {
